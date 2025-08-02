@@ -1,0 +1,339 @@
+<!-- 是可以連接的-正確-->
+<!-- 以下代碼 之前給的是可以連接的 -->
+<!-- HTML MQTT 控制面板 (連接 broker.mqttgo.io)-->
+
+<!--來源引用:20250802-7.html
+用 获取唯一机码，将其作为设备 ID 嵌入 MQTT 主题 esp32模塊 代碼後
+寫一段html 來控制 3個esp32模塊 "esp32-a" "esp32-b" "esp32-c" 
+继电器是GPIO 4，要給一個一秒的輸出
+LED是GPIO 3，要留下測試的功能     連接 20250802_6.ino
+可靠通信：QoS 1 + 5秒超时机制
+状态同步：实时显示设备内存等状态    ：实时显示信号强度(dBm)数值显示
+ 连接问题： 測試後可以連接伺服器 謝謝 豆包 可以用 調整版面 中  -->
+ 
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>模組控制中心</title>
+    <script src="https://unpkg.com/mqtt@4.3.7/dist/mqtt.min.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .control-btn {
+            transition: all 0.2s;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 40px;
+        }
+        .btn-active { 
+            background-color: #10B981; 
+            color: white;
+        }
+        .btn-inactive { 
+            background-color: #E5E7EB; 
+        }
+        .btn-locked {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        .log-error { color: #EF4444; }
+        .log-success { color: #10B981; }
+        .section-title {
+            border-left: 3px solid #3B82F6;
+            padding-left: 0.5rem;
+            margin: 1rem 0 0.5rem;
+        }
+        .status-bar {
+            margin-bottom: 1rem;
+            padding: 0.5rem;
+            border-radius: 0.5rem;
+            background-color: #f3f4f6;
+        }
+    </style>
+</head>
+<body class="p-4 bg-gray-100">
+    <div class="max-w-md mx-auto bg-white p-6 rounded-xl shadow">
+        <!-- 連接狀態放在最上面 -->
+        <div class="status-bar">
+            <div class="flex justify-between items-center">
+                <h3 class="text-sm font-semibold text-gray-700">
+                    <i class="fa fa-signal mr-1"></i>連接狀態
+                </h3>
+                <span id="connectionStatus" class="text-xs px-2 py-1 bg-yellow-100 text-yellow-800 rounded">
+                    連接中...
+                </span>
+            </div>
+        </div>
+
+        <!-- 繼電器控制區域 -->
+        <div class="mb-6">
+            <h2 class="text-sm font-semibold text-gray-700 section-title">繼電器控制（按下觸發1秒）</h2>
+            <div class="grid grid-cols-3 gap-5">
+                <button id="relay71" class="control-btn btn-inactive py-3 px-0.5 text-base rounded-lg">71格</button>
+                <button id="relay72" class="control-btn btn-inactive py-3 px-0.5 text-base rounded-lg">72格</button>
+                <button id="relay73" class="control-btn btn-inactive py-3 px-0.5 text-base rounded-lg">73格</button>
+                <button id="relay74" class="control-btn btn-inactive py-3 px-0.5 text-base rounded-lg">74格</button>
+                <button id="relay75" class="control-btn btn-inactive py-3 px-0.5 text-base rounded-lg">75格</button>
+                <button id="relay76" class="control-btn btn-inactive py-3 px-0.5 text-base rounded-lg">76格</button>
+                <button id="relay77" class="control-btn btn-inactive py-3 px-0.5 text-base rounded-lg">77格</button>
+            </div>
+        </div>
+
+        <!-- LED控制區域 -->
+        <div class="mb-6">
+            <h2 class="text-sm font-semibold text-gray-700 section-title">LED控制（按下下切換開關）</h2>
+            <div class="grid grid-cols-3 gap-5">
+                <button id="led71" class="control-btn btn-inactive py-3 px-0.5 text-base rounded-lg">
+                    <i class="fa fa-lightbulb-o mr-0.5"></i>71格
+                </button>
+                <button id="led72" class="control-btn btn-inactive py-3 px-0.5 text-base rounded-lg">
+                    <i class="fa fa-lightbulb-o mr-0.5"></i>72格
+                </button>
+                <button id="led73" class="control-btn btn-inactive py-3 px-0.5 text-base rounded-lg">
+                    <i class="fa fa-lightbulb-o mr-0.5"></i>73格
+                </button>
+                <button id="led74" class="control-btn btn-inactive py-3 px-0.5 text-base rounded-lg">
+                    <i class="fa fa-lightbulb-o mr-0.5"></i>74格
+                </button>
+                <button id="led75" class="control-btn btn-inactive py-3 px-0.5 text-base rounded rounded-lg">
+                    <i class="fa fa-lightbulb-o mr-0.5"></i>75格
+                </button>
+                <button id="led76" class="control-btn btn-inactive py-3 px-0.5 text-base rounded-lg">
+                    <i class="fa fa-lightbulb-o mr-0.5"></i>76格
+                </button>
+                <button id="led77" class="control-btn btn-inactive py-3 px-0.5 text-base rounded-lg">
+                    <i class="fa fa-lightbulb-o mr-0.5"></i>77格
+                </button>
+            </div>
+        </div>
+
+        <!-- 操作日誌 -->
+        <div>
+            <div class="flex justify-between items-center mb-2">
+                <h3 class="text-sm font-semibold text-gray-700">
+                    <i class="fa fa-terminal mr-1"></i>操作日誌
+                </h3>
+                <button id="clearLog" class="text-xs text-blue-500 hover:text-blue-700">
+                    清空日誌
+                </button>
+            </div>
+            <div id="logArea" class="h-40 overflow-y-auto p-2 bg-gray-50 rounded text-xs font-mono space-y-1"></div>
+        </div>
+    </div>
+
+    <script>
+        // 設備配置
+        const deviceConfigs = {
+            71: { deviceId: "y18-71-ae3s2p32" },
+            72: { deviceId: "y18-72-xxxxxxx" },
+            73: { deviceId: "y18-73-xxxxxxx" },
+            74: { deviceId: "y18-74-xxxxxxx" },
+            75: { deviceId: "y18-75-xxxxxxx" },
+            76: { deviceId: "y18-76-xxxxxxx" },
+            77: { deviceId: "y18-77-xxxxxxx" }
+        };
+
+        // MQTT配置
+        const mqttConfig = {
+            host: "broker.mqttgo.io",
+            port: 8084
+        };
+
+        // 全局變量
+        let mqttClient = null;
+        let relayLocked = {71: false, 72: false, 73: false, 74: false, 75: false, 76: false, 77: false};
+        let ledStates = {71: false, 72: false, 73: false, 74: false, 75: false, 76: false, 77: false};
+
+        // 初始化MQTT
+        function initMQTT() {
+            log("初始化MQTT連接...");
+            const clientId = "web-client-" + Math.random().toString(36).slice(2, 10);
+            const mqttUrl = `wss://${mqttConfig.host}:${mqttConfig.port}/mqtt`;
+
+            mqttClient = mqtt.connect(mqttUrl, {
+                clientId: clientId,
+                keepalive: 30
+            });
+
+            mqttClient.on("connect", () => {
+                log("MQTT連接成功", "success");
+                updateConnectionStatus("已連接", "green");
+                
+                Object.values(deviceConfigs).forEach(config => {
+                    const statusTopic = `esp32/${config.deviceId}/status`;
+                    mqttClient.subscribe(statusTopic);
+                    log(`已訂閱狀態主題: ${statusTopic}`);
+                });
+            });
+
+            mqttClient.on("message", (topic, message) => {
+                const payload = message.toString();
+                log(`設備反饋 [${topic}]: ${payload}`, "info");
+                
+                try {
+                    const data = JSON.parse(payload);
+                    if (data.led === "on" || data.led === "off") {
+                        const deviceId = topic.split("/")[1];
+                        const moduleNum = parseInt(deviceId.split("-")[1]);
+                        
+                        if (!isNaN(moduleNum)) {
+                            ledStates[moduleNum] = data.led === "on";
+                            updateLedButton(moduleNum, ledStates[moduleNum]);
+                        }
+                    }
+                } catch (e) {
+                    log(`解析反饋失敗: ${e.message}`, "error");
+                }
+            });
+
+            mqttClient.on("error", (err) => {
+                log(`MQTT錯誤: ${err.message}`, "error");
+                updateConnectionStatus("連接錯誤", "red");
+            });
+
+            mqttClient.on("close", () => {
+                log("MQTT連接已斷開", "error");
+                updateConnectionStatus("已斷開", "red");
+            });
+        }
+
+        // 繼電器控制
+        function triggerRelay(moduleNum) {
+            if (relayLocked[moduleNum]) {
+                log(`繼電器${moduleNum}已鎖定，請等待5秒`, "error");
+                return;
+            }
+
+            if (!mqttClient || !mqttClient.connected) {
+                log("MQTT未連接，無法發送命令", "error");
+                return;
+            }
+
+            const deviceId = deviceConfigs[moduleNum].deviceId;
+            const controlTopic = `esp32/${deviceId}/control`;
+            const command = "relay_trigger";
+
+            relayLocked[moduleNum] = true;
+            const btn = document.getElementById(`relay${moduleNum}`);
+            btn.classList.remove("btn-inactive");
+            btn.classList.add("btn-active", "btn-locked");
+
+            mqttClient.publish(controlTopic, command, (err) => {
+                if (err) {
+                    log(`繼電器命令發送失敗 [${controlTopic}]: ${err}`, "error");
+                    unlockRelayButton(moduleNum);
+                } else {
+                    log(`繼電器${moduleNum}已觸發（1秒）`, "success");
+                    setTimeout(() => unlockRelayButton(moduleNum), 5000);
+                }
+            });
+        }
+
+        // LED控制
+        function toggleLed(moduleNum) {
+            if (!mqttClient || !mqttClient.connected) {
+                log("MQTT未連接，無法發送命令", "error");
+                return;
+            }
+
+            const deviceId = deviceConfigs[moduleNum].deviceId;
+            const controlTopic = `esp32/${deviceId}/control`;
+            const newState = !ledStates[moduleNum];
+            const command = newState ? "led_on" : "led_off";
+
+            ledStates[moduleNum] = newState;
+            updateLedButton(moduleNum, newState);
+
+            mqttClient.publish(controlTopic, command, (err) => {
+                if (err) {
+                    log(`LED命令發送失敗 [${controlTopic}]: ${err}`, "error");
+                    ledStates[moduleNum] = !newState;
+                    updateLedButton(moduleNum, !newState);
+                } else {
+                    log(`LED${moduleNum}已${newState ? '開啟' : '關閉'}`, "success");
+                }
+            });
+        }
+
+        // 解鎖繼電器按鍵
+        function unlockRelayButton(moduleNum) {
+            relayLocked[moduleNum] = false;
+            const btn = document.getElementById(`relay${moduleNum}`);
+            btn.classList.remove("btn-active", "btn-locked");
+            btn.classList.add("btn-inactive");
+            log(`繼電器${moduleNum}已解鎖`);
+        }
+
+        // 更新LED按鍵樣式
+        function updateLedButton(moduleNum, isOn) {
+            const btn = document.getElementById(`led${moduleNum}`);
+            btn.classList.remove("btn-active", "btn-inactive");
+            btn.classList.add(isOn ? "btn-active" : "btn-inactive");
+        }
+
+        // 更新連接狀態
+        function updateConnectionStatus(text, color) {
+            const statusEl = document.getElementById("connectionStatus");
+            statusEl.textContent = text;
+            statusEl.className = "text-xs px-2 py-1 rounded";
+            
+            if (color === "green") statusEl.classList.add("bg-green-100", "text-green-800");
+            else if (color === "red") statusEl.classList.add("bg-red-100", "text-red-800");
+            else statusEl.classList.add("bg-yellow-100", "text-yellow-800");
+        }
+
+        // 添加日誌
+        function log(message, type = "info") {
+            const logEl = document.createElement("div");
+            const time = new Date().toLocaleTimeString();
+            logEl.textContent = `[${time}] ${message}`;
+            
+            if (type === "error") logEl.classList.add("log-error");
+            else if (type === "success") logEl.classList.add("log-success");
+            
+            document.getElementById("logArea").prepend(logEl);
+            
+            if (document.getElementById("logArea").children.length > 30) {
+                document.getElementById("logArea").removeChild(
+                    document.getElementById("logArea").lastChild
+                );
+            }
+        }
+
+        // 綁定事件
+        function bindEvents() {
+            // 繼電器按鍵事件
+            for (let i = 71; i <= 77; i++) {
+                document.getElementById(`relay${i}`).addEventListener("click", () => {
+                    triggerRelay(i);
+                });
+            }
+
+            // LED按鍵事件
+            for (let i = 71; i <= 77; i++) {
+                document.getElementById(`led${i}`).addEventListener("click", () => {
+                    toggleLed(i);
+                });
+            }
+
+            // 清空日誌
+            document.getElementById("clearLog").addEventListener("click", () => {
+                document.getElementById("logArea").innerHTML = "";
+                log("日誌已清空");
+            });
+        }
+
+        // 初始化
+        window.onload = () => {
+            bindEvents();
+            initMQTT();
+        };
+    </script>
+</body>
+</html>
+
+
